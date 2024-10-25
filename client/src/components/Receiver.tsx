@@ -1,9 +1,9 @@
+
 import { useEffect, useRef } from 'react';
 
 const Receiver = () => {
     const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-    const currentVideoRef = useRef<HTMLVideoElement | null>(null)
-
+    const receiverIdRef = useRef<string>('');
 
     useEffect(() => {
         const socket = new WebSocket('ws://localhost:8080');
@@ -27,38 +27,46 @@ const Receiver = () => {
     function startReceiving(socket: WebSocket) {
         const pc = new RTCPeerConnection();
 
-        pc.onicecandidate = async (event) => {
+        pc.onicecandidate = (event) => {
             if (event.candidate) {
                 socket.send(
-                    JSON.stringify({ type: 'iceCandidate', candidate: event.candidate })
+                    JSON.stringify({ type: 'iceCandidate', candidate: event.candidate, receiverId: receiverIdRef.current })
                 );
             }
         };
 
+        // Create a MediaStream to manage multiple tracks
+        const remoteStream = new MediaStream();
+
         pc.ontrack = (event) => {
-          if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = new MediaStream([event.track]);
-          }
-      };
-      
+            console.log('Track received:', event.track);
+            remoteStream.addTrack(event.track);
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
+        };
 
         socket.onmessage = async (event) => {
             const message = JSON.parse(event.data);
-
+            if (message.type === 'id') {
+              receiverIdRef.current = message.id
+              console.log(receiverIdRef)
+            } ;
+  
             if (message.type === 'createOffer') {
-                console.log('offer got');
+                console.log('Offer received');
                 await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.send(
-                    JSON.stringify({ type: 'createAnswer', sdp: pc.localDescription })
+                    JSON.stringify({ type: 'createAnswer', sdp: pc.localDescription, receiverId: receiverIdRef.current })
                 );
             } else if (message.type === 'iceCandidate') {
-                console.log('ice got');
+                console.log('ICE candidate received');
                 if (message.candidate) {
                     await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
                 }
-            }
+            } 
         };
     }
 
@@ -70,12 +78,12 @@ const Receiver = () => {
 
     return (
         <>
-            <div>Other Guy:</div>
+            <div>Receiver:  </div>
             <video ref={remoteVideoRef} autoPlay playsInline></video>
             <button onClick={handleClick}>Start Receiving</button>
-           
         </>
     );
 };
 
 export default Receiver;
+

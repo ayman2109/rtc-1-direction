@@ -1,7 +1,7 @@
 import { WebSocket, WebSocketServer} from "ws"
-
+let id = 100
 let sender: WebSocket | null = null
-let receiver: WebSocket | null = null
+let receiver: Map<string, WebSocket> = new Map()
 
 const wss = new WebSocketServer({ port: 8080 })
 
@@ -16,21 +16,34 @@ wss.on('connection', (ws) =>  {
         if(message.type == 'sender') {
             sender = ws
         } else if (message.type == 'receiver') {
-            receiver = ws
+            const newId = String(++id)
+            receiver.set(newId, ws)
+            console.log('new receiver')
+            ws.send(JSON.stringify({type: 'id',  id: newId}))
+            console.log("sending this message to the sender")
+            sender?.send(JSON.stringify({type: 'newReceiver', receiverId: newId}))
         }
 
         if(message.type == 'createOffer') {
-            receiver?.send(JSON.stringify({ type: "createOffer", sdp: message.sdp }))
+            
+            const receiverId = message.receiverId
+            
+            const receiverSocket = receiver.get(receiverId)
+            
+            receiverSocket?.send(JSON.stringify({ type: "createOffer", sdp: message.sdp }))
         }
 
         if(message.type == 'createAnswer') {
-            sender?.send(JSON.stringify({ type: "createAnswer", sdp: message.sdp }))
+            console.log("answer here", message.receiverId)
+            sender?.send(JSON.stringify({ type: "createAnswer", sdp: message.sdp, receiverId: message.receiverId }))
         }
 
         if(message.type == 'iceCandidate') {
+            const receiverId = message.receiverId
+            const receiverSocket = receiver.get(receiverId)
             if (ws === sender) {
-                receiver?.send(JSON.stringify({ type: "iceCandidate", candidate: message.candidate }))
-            } else if (ws === receiver) {
+                receiverSocket?.send(JSON.stringify({ type: "iceCandidate", candidate: message.candidate }))
+            } else if (ws === receiverSocket) {
                 sender?.send(JSON.stringify({ type: "iceCandidate", candidate: message.candidate }))
             }
         }
@@ -38,3 +51,4 @@ wss.on('connection', (ws) =>  {
     })
     
 })
+
